@@ -15,4 +15,5 @@ urlpatterns = [
     path('tickets/<int:pk>/edit/', views.TicketsEditView.as_view(), name='ticket_edit'),
     path('tickets/<int:pk>/details/', views.TicketsDetailsView.as_view(), name='ticket_details'),
     path('tickets/<int:pk>/delete/', views.TicketsDeleteView.as_view(), name='ticket_delete'),
+    path('dashboard/', views.dashboard_view, name='dashboard'),
 ]
