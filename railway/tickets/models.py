@@ -2,6 +2,7 @@
 from django.db import models
 from django.forms import ValidationError
 from datetime import date
+from decimal import Decimal
 
 class TicketOffice(models.Model):
     name = models.CharField(max_length=255, default="Залізнична каса Львів")
@@ -94,7 +95,7 @@ class Trip(models.Model):
 
 
 class Ticket(models.Model):
-    TAX = 0.2
+    TAX = Decimal('0.2')
     passenger = models.ForeignKey(Passenger, on_delete=models.CASCADE, related_name='tickets')
     cashier = models.ForeignKey(Cashier, on_delete=models.SET_NULL, null=True, related_name='sold_tickets')
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='tickets')
@@ -115,26 +116,44 @@ class Ticket(models.Model):
             return 0.7
         return 1.0
 
+    @staticmethod
+    def calculate_discount(age):
+        if age < 18:
+            return Decimal('0.5') # Знижки теж Decimal
+        elif age > 60:
+            return Decimal('0.7')
+        return Decimal('1.0')
+
     @property
     def price(self):
-        # Якщо base_price ще немає (наприклад, об'єкт тільки створюється в пам'яті), беремо з рейсу
-        price_to_calc = float(self.base_price) if self.base_price else float(self.trip.price)
+        # 1. Визначаємо базову ціну як Decimal
+        if self.base_price:
+            current_base = self.base_price # Це вже Decimal з бази
+        else:
+            current_base = Decimal(self.trip.price) # Конвертуємо int з Trip у Decimal
         
+        # 2. Отримуємо знижку
         discount = self.calculate_discount(self.passenger.age)
-        discounted_price = price_to_calc * discount
-        return round(discounted_price * (1 + self.TAX), 2)
+        
+        # 3. Рахуємо: Ціна * Знижка * (1 + Податок)
+        # Всі компоненти тут Decimal, тому точність не втрачається
+        raw_price = current_base * discount * (1 + self.TAX)
+        
+        # 4. Округляємо до 2 знаків
+        return round(raw_price, 2)
     
     def clean(self):
-        """Перевірка перед збереженням квитка"""
         if self.pk is None:
             if self.trip.available_seats <= 0:
                 raise ValidationError(f"На рейс {self.trip} більше немає вільних місць!")
 
     def save(self, *args, **kwargs):
-        # ЛОГІКА КОПІЮВАННЯ ЦІНИ:
-        # Якщо ціна не задана вручну -> беремо з Trip
+        # Якщо base_price не задано - беремо з рейсу
         if not self.base_price:
             self.base_price = self.trip.price
+        
+        # Записуємо фінальну суму в paid_amount
+        self.paid_amount = self.price
             
         self.full_clean()
         super().save(*args, **kwargs)

@@ -6,8 +6,159 @@ import plotly.express as px
 import pandas as pd
 from .models import Passenger, Cashier, Trip, Ticket
 from .repositories import RepositoryManager
+from bokeh.plotting import figure
+from bokeh.embed import components
+from bokeh.models import ColumnDataSource, HoverTool
+from bokeh.palettes import Spectral6
+import math
+import time
+import concurrent.futures
+from django.db import connection
 
 repo = RepositoryManager()
+
+def dashboard_bokeh_view(request):
+    analytics_qs = repo.get_complex_analytics()
+    plots = {}
+
+    # === 1. Прибуток по рейсах (Bar) ===
+    df1 = pd.DataFrame(list(analytics_qs['revenue_by_trip'].values('start_station', 'end_station', 'total_revenue')))
+    df1 = df1.fillna(0) # Захист від пустих даних
+    
+    if not df1.empty:
+        # ОБОВ'ЯЗКОВО: Decimal -> float
+        df1['total_revenue'] = df1['total_revenue'].astype(float)
+        df1['route'] = df1['start_station'] + " - " + df1['end_station']
+        
+        source1 = ColumnDataSource(df1)
+        # x_range потрібен для текстових осей (категорій)
+        p1 = figure(x_range=df1['route'], height=350, title="1. Прибуток рейсів (Bokeh)", toolbar_location="above")
+        p1.vbar(x='route', top='total_revenue', width=0.5, source=source1, color="#390650")
+        p1.add_tools(HoverTool(tooltips=[("Маршрут", "@route"), ("Сума", "@total_revenue")]))
+        plots['script1'], plots['div1'] = components(p1)
+
+    # === 2. Касири (Bar) ===
+    df2 = pd.DataFrame(list(analytics_qs['cashier_performance'].values('first_name', 'last_name', 'total_sales')))
+    df2 = df2.fillna(0)
+    
+    if not df2.empty:
+        df2['total_sales'] = df2['total_sales'].astype(float)
+        df2['cashier'] = df2['first_name'] + " " + df2['last_name']
+        
+        source2 = ColumnDataSource(df2)
+        p2 = figure(x_range=df2['cashier'], height=350, title="2. Продажі касирів", toolbar_location="above")
+        p2.vbar(x='cashier', top='total_sales', width=0.5, source=source2, color="teal")
+        plots['script2'], plots['div2'] = components(p2)
+
+    # === 3. Завантаженість (Bar) ===
+    df3 = pd.DataFrame(list(analytics_qs['trip_occupancy'].values('start_station', 'end_station', 'occupancy_rate')))
+    df3 = df3.fillna(0)
+    
+    if not df3.empty:
+        df3['occupancy_rate'] = df3['occupancy_rate'].astype(float)
+        df3['route'] = df3['start_station'] + "-" + df3['end_station']
+        
+        source3 = ColumnDataSource(df3)
+        p3 = figure(x_range=df3['route'], height=350, title="3. Завантаженість (%)", y_range=(0, 100))
+        p3.vbar(x='route', top='occupancy_rate', width=0.5, source=source3, color="orange")
+        p3.add_tools(HoverTool(tooltips=[("Маршрут", "@route"), ("%", "@occupancy_rate")]))
+        plots['script3'], plots['div3'] = components(p3)
+
+    # === 4. Типи потягів (Scatter) ===
+    df4 = pd.DataFrame(list(analytics_qs['train_type_stats'].values('train_type', 'avg_passenger_age', 'max_ticket_price')))
+    df4 = df4.fillna(0)
+    
+    if not df4.empty:
+        df4['max_ticket_price'] = df4['max_ticket_price'].astype(float)
+        df4['avg_passenger_age'] = df4['avg_passenger_age'].astype(float)
+        
+        source4 = ColumnDataSource(df4)
+        p4 = figure(height=350, title="4. Вік vs Ціна (Scatter)")
+        p4.circle(x='avg_passenger_age', y='max_ticket_price', size=15, source=source4, color="firebrick", alpha=0.6)
+        p4.add_tools(HoverTool(tooltips=[("Тип", "@train_type"), ("Ціна", "@max_ticket_price"), ("Вік", "@avg_passenger_age")]))
+        plots['script4'], plots['div4'] = components(p4)
+
+    # === 5. Продажі по місяцях (Line) ===
+    df5 = pd.DataFrame(list(analytics_qs['sales_by_month'].values('month', 'tickets_sold')))
+    df5 = df5.fillna(0)
+    
+    if not df5.empty:
+        # Bokeh потребує, щоб x-axis був відсортований для лінійного графіка
+        df5 = df5.sort_values('month')
+        source5 = ColumnDataSource(df5)
+        p5 = figure(height=350, title="5. Динаміка продажів")
+        p5.line(x='month', y='tickets_sold', line_width=2, source=source5, color="blue")
+        p5.circle(x='month', y='tickets_sold', size=8, source=source5, color="blue")
+        plots['script5'], plots['div5'] = components(p5)
+
+    # === 6. VIP Клієнти (Horizontal Bar) ===
+    df6 = pd.DataFrame(list(analytics_qs['top_passengers'].values('first_name', 'last_name', 'total_spent')))
+    df6 = df6.fillna(0)
+    
+    if not df6.empty:
+        df6['total_spent'] = df6['total_spent'].astype(float)
+        df6['person'] = df6['first_name'] + " " + df6['last_name']
+        
+        source6 = ColumnDataSource(df6)
+        # y_range - список імен
+        p6 = figure(y_range=df6['person'], height=350, title="6. VIP Клієнти")
+        p6.hbar(y='person', right='total_spent', height=0.5, source=source6, color="purple")
+        p6.add_tools(HoverTool(tooltips=[("Клієнт", "@person"), ("Витрачено", "@total_spent")]))
+        plots['script6'], plots['div6'] = components(p6)
+
+    return render(request, 'tickets/dashboard_bokeh.html', {'plots': plots})
+
+def heavy_db_query(n):
+    # 1. Створюємо нове з'єднання для цього потоку (Django робить це автоматично при запиті)
+    try:
+        # Робимо "важкий" запит: витягуємо список ID, а не просто count
+        # Це змушує базу даних реально працювати
+        _ = list(Ticket.objects.values_list('id', flat=True))
+        
+        # Можна додати мікро-затримку, щоб імітувати "складну обробку" або мережеві лаги
+        # time.sleep(0.01) 
+    finally:
+        # 2. ДУЖЕ ВАЖЛИВО: Закриваємо з'єднання після виконання в потоці!
+        # Якщо цього не зробити, Django не звільнить конект, і база "ляже".
+        connection.close()
+    return n
+
+def performance_view(request):
+    request_count = 100  # Кількість запитів
+    worker_options = [1, 2, 4, 8, 10] # Кількість потоків
+    results = []
+
+    graph_html = None
+    
+    # Запускаємо тест тільки по кнопці
+    if request.GET.get('run_test'):
+        for max_workers in worker_options:
+            start_time = time.time()
+            
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Відправляємо завдання
+                futures = [executor.submit(heavy_db_query, i) for i in range(request_count)]
+                # Чекаємо виконання всіх
+                concurrent.futures.wait(futures)
+            
+            end_time = time.time()
+            duration = end_time - start_time
+            results.append({'workers': max_workers, 'time': duration})
+            
+            print(f"Threads: {max_workers}, Time: {duration:.4f}s") # Лог в консоль
+
+        # Будуємо графік
+        if results:
+            df_perf = pd.DataFrame(results)
+            fig = px.line(
+                df_perf, x='workers', y='time', markers=True, 
+                title=f'Час виконання {request_count} запитів до БД',
+                labels={'workers': 'Потоки', 'time': 'Час (сек)'}
+            )
+            graph_html = fig.to_html(full_html=False)
+
+    return render(request, 'tickets/performance.html', {'graph': graph_html})
+
 
 # Головна сторінка
 def home(request):
@@ -258,16 +409,16 @@ class TicketsDetailsView(DetailView):
 class TicketsAddView(CreateView):
     model = Ticket
     template_name = 'tickets/ticket_form.html'
-    fields = ['trip', 'passenger', 'cashier', 'base_price_id', 'payment_method']
+    fields = ['trip', 'passenger', 'cashier', 'base_price', 'payment_method']
     success_url = reverse_lazy('tickets_list')
 
     def get_queryset(self):
         return repo.tickets.all()
-    
+
 class TicketsEditView(UpdateView):
     model = Ticket
     template_name = 'tickets/ticket_form.html'
-    fields = ['trip', 'passenger', 'cashier', 'base_price_id', 'payment_method']
+    fields = ['trip', 'passenger', 'cashier', 'base_price', 'payment_method']
     success_url = reverse_lazy('tickets_list')
 
 class TicketsDeleteView(DeleteView):
