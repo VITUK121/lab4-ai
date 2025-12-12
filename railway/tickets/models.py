@@ -59,7 +59,8 @@ class Trip(models.Model):
 class Ticket(models.Model):
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='tickets')
     passenger = models.ForeignKey(Passenger, on_delete=models.CASCADE, related_name='tickets')
-    cashier = models.ForeignKey(Cashier, on_delete=models.SET_NULL, null=True)
+    cashier = models.ForeignKey(Cashier, on_delete=models.SET_NULL, null=True, related_name='sold_tickets')
+    purchase_date = models.DateTimeField(auto_now_add=True)
     
     # Використовуємо Decimal, щоб не було помилок валідації
     base_price = models.DecimalField(max_digits=10, decimal_places=2, blank=True)

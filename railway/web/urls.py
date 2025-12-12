@@ -21,4 +21,9 @@ urlpatterns = [
     path('tickets/<int:pk>/', views.TicketsDetailView.as_view(), name='ticket_detail'),
     path('tickets/<int:pk>/edit/', views.TicketsUpdateView.as_view(), name='ticket_edit'),
     path('tickets/<int:pk>/delete/', views.TicketsDeleteView.as_view(), name='ticket_delete'),
+
+
+    path('dashboard/', views.dashboard_view, name='dashboard'),
+    path('dashboard/v2/', views.dashboard_bokeh_view, name='dashboard_bokeh'),
+    path('performance/', views.performance_view, name='performance'),
 ]

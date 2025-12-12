@@ -2,7 +2,9 @@
 from abc import ABC, abstractmethod
 from typing import Type, List, Optional
 from django.db import models
-
+from django.db.models import Count, Sum, Avg, Max, F, ExpressionWrapper, FloatField
+from django.db.models.functions import ExtractMonth
+from .models import Trip, Ticket, Cashier, Passenger
 # --- Інтерфейс базового репозиторію ---
 class BaseRepository(ABC):
     model: Type[models.Model]
@@ -80,9 +82,60 @@ class TicketRepository(BaseRepository):
 
 # --- Єдина точка доступу (Repository Manager / Unit of Work) ---
 class RepositoryManager:
-    def __init__(self):
-        self.passengers = PassengerRepository()
-        self.cashiers = CashierRepository()
-        self.trips = TripRepository()
-        self.offices = TicketOfficeRepository()
-        self.tickets = TicketRepository()
+    @property
+    def passengers(self): return Passenger.objects.all()
+    
+    @property
+    def cashiers(self): return Cashier.objects.all()
+    
+    @property
+    def trips(self): return Trip.objects.all()
+    
+    @property
+    def tickets(self): return Ticket.objects.all()
+
+    def get_by_id(self, model_manager, id):
+        return model_manager.filter(id=id).first()
+
+    def get_complex_analytics(self):
+        """6 складних запитів для Лаби 4"""
+        return {
+            # 1. Прибуток по рейсах
+            'revenue_by_trip': Trip.objects.annotate(
+                total_revenue=Sum('tickets__paid_amount')
+            ).order_by('-total_revenue'),
+
+            # 2. Ефективність касирів
+            'cashier_performance': Cashier.objects.annotate(
+                tickets_count=Count('sold_tickets'),
+                total_sales=Sum('sold_tickets__paid_amount')
+            ).filter(tickets_count__gt=0).order_by('-total_sales'),
+
+            # 3. Завантаженість (%)
+            'trip_occupancy': Trip.objects.annotate(
+                sold_count=Count('tickets')
+            ).annotate(
+                occupancy_rate=ExpressionWrapper(
+                    F('sold_count') * 100.0 / F('capacity'),
+                    output_field=FloatField()
+                )
+            ).order_by('-occupancy_rate'),
+
+            # 4. Типи потягів
+            'train_type_stats': Trip.objects.values('train_type').annotate(
+                avg_passenger_age=Avg('tickets__passenger__age'),
+                max_ticket_price=Max('tickets__paid_amount')
+            ).order_by('train_type'),
+
+            # 5. Продажі по місяцях
+            'sales_by_month': Ticket.objects.annotate(
+                month=ExtractMonth('purchase_date')
+            ).values('month').annotate(
+                tickets_sold=Count('id')
+            ).order_by('month'),
+
+            # 6. VIP Пасажири
+            'top_passengers': Passenger.objects.annotate(
+                total_spent=Sum('tickets__paid_amount')
+            ).filter(total_spent__isnull=False).order_by('-total_spent')[:10]
+        }
