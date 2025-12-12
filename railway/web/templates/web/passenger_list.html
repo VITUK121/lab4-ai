@@ -11,16 +11,26 @@
     <div class="container">
         <h1>Пасажири</h1>
         <a href="{% url 'passenger_add' %}">Додати нового пасажира</a>
-        <ul>
+        <table id="ticketsTable">
+            <tr>
+                <th onclick="sortTable(0)">ID</th>
+                <th onclick="sortTable(1)">Прізвище та Ім'я</th>
+                <th onclick="sortTable(2)">Паспорт</th>
+                <th onclick="sortTable(3)">Вік</th>
+            </tr>
             {% for passenger in passengers %}
-                <li>
-                    {{ passenger.full_name }} ({{ passenger.passport }}, {{ passenger.age }} років)
-                    <a href="{% url 'passenger_edit' passenger.id %}">Редагувати</a>
-                    <a href="{% url 'passenger_delete' passenger.id %}">Видалити</a>
-                </li>
+            <tr>
+                    <td>{{ passenger.id }}</td>
+                    <td>{{ passenger.full_name }}</td>
+                    <td>{{ passenger.passport }}</td>
+                    <td>{{ passenger.age }} років</td>
+                    <td><a style="border: none; text-decoration: none;" href="{% url 'passenger_edit' passenger.id %}">Редагувати</a></td>
+                    <td><a style="border: none; text-decoration: none;" href="{% url 'passenger_delete' passenger.id %}">Видалити</a></td>
+                </tr>
             {% endfor %}
-        </ul>
+        </table>
         <a href="{% url 'home' %}">Назад на головну</a>
     </div>
+    <script src="{% static 'js/sortTickets.js' %}"></script>
 </body>
 </html>

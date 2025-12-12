@@ -11,13 +11,23 @@
     <div class="container">
         <!-- cashier_list.html -->
         <h1>Касири</h1>
-        <ul>
+        <table id="ticketsTable">
+            <tr>
+                <th onclick="sortTable(0)">ID</th>
+                <th onclick="sortTable(1)">Прізвище та ім'я</th>
+                <th onclick="sortTable(2)">Дата влаштування</th>
+            </tr>
             {% for cashier in cashiers %}
-            <li>{{ cashier.full_name }} (Прийнятий: {{ cashier.hire_date }})</li>
+                <tr>
+                    <td>{{ cashier.id }}</td>
+                    <td>{{ cashier.full_name }}</td>
+                    <td>{{ cashier.hire_date }}</td>
+                </tr>
             {% endfor %}
-        </ul>
-        <a href="{% url 'home' %}">Назад</a>
+            
+        </table>
+            <a href="{% url 'home' %}">Назад</a>
     </div>
-
+    <script src="{% static 'js/sortTickets.js' %}"></script>
 </body>
 </html>

@@ -2,6 +2,7 @@ from decimal import Decimal
 from django.db import models
 from django.forms import ValidationError
 from datetime import date
+from decimal import Decimal
 
 class TicketOffice(models.Model):
     name = models.CharField(max_length=255, default="Залізнична каса Львів")
