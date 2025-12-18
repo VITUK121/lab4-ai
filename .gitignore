@@ -1,3 +1,10 @@
+# Virtual environment
 venv/
+
+# Python cache
 __pycache__/
 *.pyc
+
+# Django media (user uploads)
+media/
+
